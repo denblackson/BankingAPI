@@ -7,10 +7,8 @@ public record TransactionDTO(
     int Id,
     [Required] TransactionType TransactionType,
     [Required] TransactionCategory TransactionCategory,
-    [Required, Range(0.01, double.MaxValue, ErrorMessage = "Amount must be greater than zero")]
+    [Required, Range(0.01, double.MaxValue)]
     decimal Amount,
     [Required] DateTime Timestamp,
-    int? SourceAccountId,
-    int? DestinationAccountId,
     [StringLength(250)] string Description
 );

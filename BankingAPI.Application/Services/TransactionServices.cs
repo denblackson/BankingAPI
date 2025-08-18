@@ -11,109 +11,126 @@ namespace BankingAPI.Application.Services;
 public class TransactionServices(ITransactionRepository transactionRepository, IAccountRepository accountRepository)
     : ITransactionService
 {
-    public async Task<Response> CreateAsync(Transaction transaction)
+    public async Task<Response> DepositAsync(string accountNumber, decimal amount, string description = "")
     {
-        try
+        var account = await accountRepository.GetByAsync(a => a.AccountNumber == accountNumber);
+        if (account == null) return new Response(false, $"Account {accountNumber} not found");
+
+        account.Balance += amount;
+        await accountRepository.UpdateAsync(account);
+
+        var transaction = new Transaction
         {
-            // Check SourceAccount
-            if (transaction.SourceAccountId.HasValue)
-            {
-                var source = await accountRepository.GetByAsync(a => a.Id == transaction.SourceAccountId.Value);
-                if (source is null)
-                    return new Response(false, $"Source account {transaction.SourceAccountId} not found");
+            TransactionType = TransactionType.Income,
+            Amount = amount,
+            DestinationAccount = account,
+            Description = description
+        };
 
-                if (transaction.TransactionType == TransactionType.Outcome && source.Balance < transaction.Amount)
-                    return new Response(false, $"Insufficient funds in account {source.AccountNumber}");
-
-                // Update balance
-                source.Balance += transaction.TransactionType == TransactionType.Income
-                    ? transaction.Amount
-                    : -transaction.Amount;
-
-                await accountRepository.UpdateAsync(source);
-            }
-
-            // Check DestinationAccount for Income-transaction
-            if (transaction.DestinationAccountId.HasValue && transaction.TransactionType == TransactionType.Income)
-            {
-                var dest = await accountRepository.GetByAsync(a => a.Id == transaction.DestinationAccountId.Value);
-                if (dest is null)
-                    return new Response(false, $"Destination account {transaction.DestinationAccountId} not found");
-
-                dest.Balance += transaction.Amount;
-                await accountRepository.UpdateAsync(dest);
-            }
-
-            var created = await transactionRepository.CreateAsync(transaction);
-            return new Response(true, $"Transaction {created.Id} created successfully");
-        }
-        catch (Exception e)
-        {
-            LogException.LogExceptions(e);
-            throw new InvalidOperationException("Error occured while creating transaction", e);
-        }
+        var created = await transactionRepository.CreateAsync(transaction);
+        return new Response(true, $"Deposit {amount} to {accountNumber} successful, transaction {created.Id}");
     }
 
-    public async Task<Response> UpdateAsync(Transaction transaction)
+    public async Task<Response> WithdrawAsync(string accountNumber, decimal amount, string description = "")
     {
-        try
-        {
-            var existing = await transactionRepository.GetByAsync(t => t.Id == transaction.Id);
-            if (existing is null)
-                return new Response(false, $"Transaction {transaction.Id} does not exist");
+        var account = await accountRepository.GetByAsync(a => a.AccountNumber == accountNumber);
+        if (account == null) return new Response(false, $"Account {accountNumber} not found");
 
-            await transactionRepository.UpdateAsync(transaction);
-            return new Response(true, $"Transaction {transaction.Id} updated successfully");
-        }
-        catch (Exception e)
+        if (account.Balance < amount)
+            return new Response(false, $"Insufficient funds in account {accountNumber}");
+
+        account.Balance -= amount;
+        await accountRepository.UpdateAsync(account);
+
+        var transaction = new Transaction
         {
-            LogException.LogExceptions(e);
-            throw new InvalidOperationException("Error occured while updating transaction", e);
-        }
+            TransactionType = TransactionType.Outcome,
+            Amount = amount,
+            SourceAccount = account,
+            Description = description
+        };
+
+        var created = await transactionRepository.CreateAsync(transaction);
+        return new Response(true, $"Withdraw {amount} from {accountNumber} successful, transaction {created.Id}");
     }
+
+    public async Task<Response> TransferAsync(string sourceAccountNumber, string destinationAccountNumber,
+        decimal amount, string description = "")
+    {
+        var source = await accountRepository.GetByAsync(a => a.AccountNumber == sourceAccountNumber);
+        var destination = await accountRepository.GetByAsync(a => a.AccountNumber == destinationAccountNumber);
+
+        if (source == null) return new Response(false, $"Source account {sourceAccountNumber} not found");
+        if (destination == null)
+            return new Response(false, $"Destination account {destinationAccountNumber} not found");
+        if (source.Balance < amount) return new Response(false, $"Insufficient funds in account {sourceAccountNumber}");
+
+        source.Balance -= amount;
+        destination.Balance += amount;
+
+        await accountRepository.UpdateAsync(source);
+        await accountRepository.UpdateAsync(destination);
+
+        var transaction = new Transaction
+        {
+            TransactionType = TransactionType.Outcome,
+            Amount = amount,
+            SourceAccount = source,
+            DestinationAccount = destination,
+            Description = description
+        };
+
+        var created = await transactionRepository.CreateAsync(transaction);
+        return new Response(true,
+            $"Transfer {amount} from {sourceAccountNumber} to {destinationAccountNumber} successful, transaction {created.Id}");
+    }
+
 
     public async Task<Response> DeleteAsync(int transactionId)
     {
-        try
-        {
-            var existing = await transactionRepository.GetByAsync(t => t.Id == transactionId);
-            if (existing is null)
-                return new Response(false, $"Transaction {transactionId} not found");
+        var existing = await transactionRepository.GetByAsync(t => t.Id == transactionId);
+        if (existing is null)
+            return new Response(false, $"Transaction {transactionId} not found");
 
-            await transactionRepository.DeleteAsync(existing);
-            return new Response(true, $"Transaction {transactionId} deleted successfully");
-        }
-        catch (Exception e)
+        // Rollback balance when deleting a transaction
+        if (existing.SourceAccountId.HasValue)
         {
-            LogException.LogExceptions(e);
-            throw new InvalidOperationException("Error occured while deleting transaction", e);
+            var source = await accountRepository.GetByAsync(a => a.Id == existing.SourceAccountId.Value);
+            if (source != null)
+            {
+                source.Balance += existing.Amount; // return funds
+                await accountRepository.UpdateAsync(source);
+            }
         }
+
+        if (existing.DestinationAccountId.HasValue)
+        {
+            var dest = await accountRepository.GetByAsync(a => a.Id == existing.DestinationAccountId.Value);
+            if (dest != null)
+            {
+                dest.Balance -= existing.Amount; // deduct funds
+                await accountRepository.UpdateAsync(dest);
+            }
+        }
+
+        await transactionRepository.DeleteAsync(existing);
+        return new Response(true, $"Transaction {transactionId} deleted successfully");
     }
 
-    public async Task<IEnumerable<Transaction>> GetAllAsync()
-    {
-        try
-        {
-            return await transactionRepository.GetAllAsync();
-        }
-        catch (Exception e)
-        {
-            LogException.LogExceptions(e);
-            throw new InvalidOperationException("Error occured while getting all transactions", e);
-        }
-    }
+    public async Task<IEnumerable<Transaction>> GetAllAsync() =>
+        await transactionRepository.GetAllAsync();
+
+    public async Task<Transaction?> GetByAsync(Expression<Func<Transaction, bool>> predicate) =>
+        await transactionRepository.GetByAsync(predicate);
 
 
-    public async Task<Transaction?> GetByAsync(Expression<Func<Transaction, bool>> predicate)
-    {
-        try
-        {
-            return await transactionRepository.GetByAsync(predicate);
-        }
-        catch (Exception e)
-        {
-            LogException.LogExceptions(e);
-            throw new InvalidOperationException("Error occured while getting transactions by predicate", e);
-        }
-    }
+    // public async Task<Response> UpdateAsync(Transaction transaction)
+    // {
+    //     var existing = await transactionRepository.GetByAsync(t => t.Id == transaction.Id);
+    //     if (existing is null)
+    //         return new Response(false, $"Transaction {transaction.Id} does not exist");
+    //
+    //     await transactionRepository.UpdateAsync(transaction);
+    //     return new Response(true, $"Transaction {transaction.Id} updated successfully");
+    // }
 }

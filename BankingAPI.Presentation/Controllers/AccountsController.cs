@@ -1,7 +1,6 @@
 ﻿using BankingAPI.Application.Conversions;
 using BankingAPI.Application.DTOs;
 using BankingAPI.Application.Interfaces;
-using BankingAPI.Application.Interfaces.Repositories;
 using BankingAPI.Domain.Responses;
 using Microsoft.AspNetCore.Mvc;
 
@@ -34,8 +33,9 @@ public class AccountsController(IAccountService accountService) : ControllerBase
         return Ok(dto);
     }
 
+
     [HttpPost("CreateAccount")]
-    public async Task<ActionResult<Response>> CreateAccount([FromBody] AccountDTO accountDto)
+    public async Task<ActionResult<Response>> CreateAccount([FromBody] CreateAccountDTO accountDto)
     {
         var entity = AccountConversion.ToEntity(accountDto);
         var response = await accountService.CreateAsync(entity);

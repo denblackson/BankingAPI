@@ -6,9 +6,15 @@ namespace BankingAPI.Application.Interfaces;
 
 public interface ITransactionService
 {
-    Task<Response> CreateAsync(Transaction transaction);
-    Task<Response> UpdateAsync(Transaction transaction);
+    //Task<Response> CreateAsync(Transaction transaction);
+    //Task<Response> UpdateAsync(Transaction transaction);
     Task<Response> DeleteAsync(int transactionId);
     Task<IEnumerable<Transaction>> GetAllAsync();
     Task<Transaction?> GetByAsync(Expression<Func<Transaction, bool>> predicate);
+
+
+    Task<Response> DepositAsync(string accountNumber, decimal amount, string description = "");
+    Task<Response> WithdrawAsync(string accountNumber, decimal amount, string description = "");
+    Task<Response> TransferAsync(string sourceAccountNumber, string destinationAccountNumber, decimal amount,
+        string description = "");
 }

@@ -5,38 +5,43 @@ namespace BankingAPI.Application.Conversions;
 
 public class TransactionConversion
 {
-    public static Transaction ToEntity(TransactionDTO transactionDTO) => new()
+    public static Transaction ToEntity(TransactionDTO dto) => new()
     {
-        Id = transactionDTO.Id,
-        TransactionType = transactionDTO.TransactionType,
-        TransactionCategory = transactionDTO.TransactionCategory,
-        Amount = transactionDTO.Amount,
-        Timestamp = transactionDTO.Timestamp,
-        SourceAccountId = transactionDTO.SourceAccountId,
-        DestinationAccountId = transactionDTO.DestinationAccountId,
-        Description = transactionDTO.Description
+        Id = dto.Id,
+        TransactionType = dto.TransactionType,
+        TransactionCategory = dto.TransactionCategory,
+        Amount = dto.Amount,
+        Timestamp = dto.Timestamp,
+        Description = dto.Description
     };
 
     public static (TransactionDTO?, IEnumerable<TransactionDTO>?) FromEntity(Transaction transaction,
-        IEnumerable<System.Transactions.Transaction>? transactions)
+        IEnumerable<Transaction>? transactions)
     {
-        if (transaction is not null || transactions is null)
+        if (transaction != null)
         {
-            var _singleTransaction = new TransactionDTO(transaction!.Id, transaction.TransactionType,
-                transaction.TransactionCategory,
-                transaction.Amount, transaction.Timestamp, transaction.SourceAccountId,
-                transaction.DestinationAccountId, transaction.Description);
-            return (_singleTransaction, null);
-        }
-
-        if (transaction is null || transactions is not null)
-        {
-            var _transactions = transactions.Select(t => new TransactionDTO(transaction!.Id,
+            var singleDto = new TransactionDTO(
+                transaction.Id,
                 transaction.TransactionType,
                 transaction.TransactionCategory,
-                transaction.Amount, transaction.Timestamp, transaction.SourceAccountId,
-                transaction.DestinationAccountId, transaction.Description)).ToList();
-            return (null, _transactions);
+                transaction.Amount,
+                transaction.Timestamp,
+                transaction.Description
+            );
+            return (singleDto, null);
+        }
+
+        if (transactions != null)
+        {
+            var dtos = transactions.Select(t => new TransactionDTO(
+                t.Id,
+                t.TransactionType,
+                t.TransactionCategory,
+                t.Amount,
+                t.Timestamp,
+                t.Description
+            )).ToList();
+            return (null, dtos);
         }
 
         return (null, null);
